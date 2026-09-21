@@ -222,7 +222,20 @@ export function VeridexApp() {
         ]);
         if (teamError) throw teamError;
         if (logError) throw logError;
-        setTeams((teamRows || []) as Team[]);
+        const normalizedTeams = (teamRows || []).map((team) => ({
+          ...team,
+          participants: Array.isArray(team.participants)
+            ? team.participants
+            : team.participants
+              ? [team.participants]
+              : [],
+          presentations: Array.isArray(team.presentations)
+            ? team.presentations
+            : team.presentations
+              ? [team.presentations]
+              : [],
+        })) as Team[];
+        setTeams(normalizedTeams);
         setActivity((logRows || []) as ActivityLog[]);
         setProfileName("Coordinator");
       } catch (error) {
