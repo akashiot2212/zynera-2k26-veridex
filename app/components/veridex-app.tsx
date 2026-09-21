@@ -2733,8 +2733,11 @@ function LoginScreen() {
 
 function ParticipantUploadPage() {
   const [event, setEvent] = useState<EventRecord | null>(null);
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [selectedTeamId, setSelectedTeamId] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [collegeName, setCollegeName] = useState("");
+  const [participants, setParticipants] = useState<Participant[]>([
+    emptyParticipant(1),
+  ]);
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -2747,20 +2750,20 @@ function ParticipantUploadPage() {
         .from("events").select("*").eq("event_code", "VERIDEX").limit(1);
       const current = (events?.[0] as EventRecord | undefined) || null;
       setEvent(current);
-      if (current) {
-        const { data } = await supabase
-          .from("teams").select("*,participants(*),presentations(*)")
-          .eq("event_id", current.id).order("team_id");
-        setTeams((data || []) as Team[]);
-      }
       setLoading(false);
     }
     void load();
   }, []);
 
   async function submit() {
-    const team = teams.find((item) => item.id === selectedTeamId);
-    if (!supabase || !event || !team || !file) return;
+    if (!supabase || !event || !file || !teamName.trim() || !collegeName.trim()) {
+      toast.error("Enter your team name, college, participants, and PPT.");
+      return;
+    }
+    if (participants.some((p) => !p.participant_name.trim() || !p.department.trim())) {
+      toast.error("Complete every participant name and department.");
+      return;
+    }
     const ext = file.name.split(".").pop()?.toLowerCase();
     if (!ext || !["ppt", "pptx"].includes(ext)) {
       toast.error("Please choose a .ppt or .pptx file.");
@@ -2768,6 +2771,33 @@ function ParticipantUploadPage() {
     }
     setUploading(true);
     try {
+      const { data: lastTeam } = await supabase
+        .from("teams").select("team_id").eq("event_id", event.id)
+        .order("team_id", { ascending: false }).limit(1).maybeSingle();
+      const lastNumber = Number(lastTeam?.team_id?.replace(/\D/g, "") || 0);
+      const generatedTeamId = "VER" + String(lastNumber + 1).padStart(3, "0");
+      const { count } = await supabase
+        .from("teams").select("id", { count: "exact", head: true })
+        .eq("event_id", event.id);
+      const { data: team, error: teamInsertError } = await supabase
+        .from("teams").insert({
+          event_id: event.id,
+          team_id: generatedTeamId,
+          team_name: teamName.trim(),
+          college_name: collegeName.trim(),
+          presentation_order: (count || 0) + 1,
+        }).select("id,team_id").single();
+      if (teamInsertError) throw teamInsertError;
+      const { error: participantError } = await supabase.from("participants").insert(
+        participants.map((participant, index) => ({
+          team_id: team.id,
+          participant_name: participant.participant_name.trim(),
+          department: participant.department.trim(),
+          year: participant.year,
+          participant_number: index + 1,
+        })),
+      );
+      if (participantError) throw participantError;
       const stored = team.team_id + "_" + safeFilename(file.name);
       const path = event.id + "/" + team.team_id + "/" + stored;
       const { error: uploadError } = await supabase.storage
@@ -2793,7 +2823,7 @@ function ParticipantUploadPage() {
         description: team.team_id + " PPT uploaded by participant",
       });
       setDone(true);
-      toast.success(team.team_id + " presentation uploaded successfully.");
+      toast.success(team.team_id + " registration and PPT upload complete.");
     } catch (error) {
       toast.error(readableError(error));
     } finally {
@@ -2807,8 +2837,8 @@ function ParticipantUploadPage() {
         <div className="login-mark"><Upload /></div>
         <p className="eyebrow pale">ZYNERA 2K26</p>
         <h1>VERIDEX</h1>
-        <h2>Participant PPT Upload</h2>
-        <p>Choose your registered team and upload one presentation.</p>
+        <h2>Team Registration & PPT</h2>
+        <p>Register your team once and submit its presentation.</p>
         <span>Created by Akash</span>
       </section>
       <section className="login-panel">
@@ -2823,22 +2853,38 @@ function ParticipantUploadPage() {
         ) : (
           <form onSubmit={(e) => { e.preventDefault(); void submit(); }}>
             <p className="eyebrow">Shared participant link</p>
-            <h2>Submit your PPT</h2>
+            <h2>Register your team</h2>
             <p>No account or password is required.</p>
-            <Label htmlFor="participant-team">Select your team</Label>
-            <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
-              <SelectTrigger id="participant-team"><SelectValue placeholder="Choose team ID and names" /></SelectTrigger>
-              <SelectContent>
-                {teams.map((team) => (
-                  <SelectItem value={team.id} key={team.id}>
-                    {team.team_id + " · " + team.participants.map((p) => p.participant_name).join(", ")}
-                  </SelectItem>
-                ))}
-              </SelectContent>
+            <Label htmlFor="participant-team-name">Team name</Label>
+            <Input id="participant-team-name" value={teamName} onChange={(e) => setTeamName(e.target.value)} required />
+            <Label htmlFor="participant-college">College name</Label>
+            <Input id="participant-college" value={collegeName} onChange={(e) => setCollegeName(e.target.value)} required />
+            <Label>Number of participants</Label>
+            <Select value={String(participants.length)} onValueChange={(value) => {
+              const count = Number(value);
+              setParticipants(Array.from({ length: count }, (_, index) => participants[index] || emptyParticipant(index + 1)));
+            }}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>{[1, 2, 3, 4].map((value) => <SelectItem value={String(value)} key={value}>{value}</SelectItem>)}</SelectContent>
             </Select>
+            {participants.map((participant, index) => (
+              <section className="participant-public-card" key={index}>
+                <h4>Participant {index + 1}</h4>
+                <Label>Name</Label>
+                <Input value={participant.participant_name} onChange={(e) => setParticipants((old) => old.map((item, i) => i === index ? { ...item, participant_name: e.target.value } : item))} required />
+                <Label>Department</Label>
+                <Input value={participant.department} onChange={(e) => setParticipants((old) => old.map((item, i) => i === index ? { ...item, department: e.target.value } : item))} required />
+                <Label>Year</Label>
+                <Select value={participant.year} onValueChange={(value) => setParticipants((old) => old.map((item, i) => i === index ? { ...item, year: value as YearLevel } : item))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{years.map((value) => <SelectItem value={value} key={value}>{value}</SelectItem>)}</SelectContent>
+                </Select>
+              </section>
+            ))}
+            <p className="muted">Your Team ID will be generated automatically after submission.</p>
             <Label htmlFor="participant-ppt">PowerPoint file</Label>
             <Input id="participant-ppt" type="file" accept=".ppt,.pptx" onChange={(e) => setFile(e.target.files?.[0] || null)} required />
-            <Button type="submit" disabled={uploading || !selectedTeamId || !file}>
+            <Button type="submit" disabled={uploading || !file}>
               {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
               {uploading ? "Uploading…" : "Upload presentation"}
             </Button>
