@@ -76,7 +76,6 @@ import {
   isSupabaseConfigured,
   presentationBucket,
   readableError,
-  safeFilename,
   supabase,
 } from "../lib/supabase";
 import type {
@@ -600,7 +599,9 @@ export function VeridexApp() {
     }
     setUploading((v) => ({ ...v, [team.id]: 15 }));
     try {
-      const stored = `${team.team_id}_${safeFilename(file.name)}`;
+      // Keep the original name as metadata, but give every stored presentation
+      // one predictable Paper ID filename for easy event-day identification.
+      const stored = `${team.team_id}.${ext}`;
       const path = `${event.id}/${team.team_id}/${stored}`;
       if (demoMode) {
         await new Promise((r) => setTimeout(r, 450));
@@ -885,7 +886,7 @@ export function VeridexApp() {
       "College Name",
       "PPT Status",
       "PPT Filename",
-      "PPT Link",
+      "Paper ID",
       "Presentation Status",
       "Presentation Order",
       "Uploaded By",
@@ -894,21 +895,6 @@ export function VeridexApp() {
       "Last Modified By",
       "Last Modified Time",
     ];
-    const links: Record<string, string> = {};
-    if (supabase && !demoMode) {
-      const client = supabase;
-      await Promise.all(
-        teams.map(async (t) => {
-          const ppt = t.presentations[0];
-          if (ppt) {
-            const { data } = await client.storage
-              .from(presentationBucket)
-              .createSignedUrl(ppt.storage_path, 3600);
-            if (data?.signedUrl) links[t.id] = data.signedUrl;
-          }
-        }),
-      );
-    }
     const rows = [...teams]
       .sort((a, b) => a.presentation_order - b.presentation_order)
       .map((t, i) => {
@@ -927,7 +913,7 @@ export function VeridexApp() {
           t.college_name,
           t.ppt_status,
           ppt?.stored_filename || "",
-          links[t.id] || "",
+          ppt ? t.team_id : "",
           t.presentation_status,
           t.presentation_order,
           ppt?.uploader?.full_name || ppt?.uploader?.email || ppt?.uploader_name || profileName,
@@ -2824,7 +2810,9 @@ function ParticipantUploadPage() {
         })),
       );
       if (participantError) throw participantError;
-      const stored = team.team_id + "_" + safeFilename(file.name);
+      // Participant uploads use the same Paper ID naming convention as
+      // coordinator uploads, irrespective of the original file name.
+      const stored = team.team_id + "." + ext;
       const path = event.id + "/" + team.team_id + "/" + stored;
       const { error: uploadError } = await supabase.storage
         .from(presentationBucket).upload(path, file, {
