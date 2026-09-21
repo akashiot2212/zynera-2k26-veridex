@@ -19,8 +19,20 @@ export const supabase = isSupabaseConfigured
 export const presentationBucket = "veridex-presentations";
 
 export function readableError(error: unknown) {
+  const objectError = error as {
+    message?: string;
+    details?: string;
+    hint?: string;
+    code?: string;
+  } | null;
   const message =
-    error instanceof Error ? error.message : String(error || "Unknown error");
+    error instanceof Error
+      ? error.message
+      : objectError?.message ||
+        objectError?.details ||
+        (error ? JSON.stringify(error) : "Unknown error");
+  if (objectError?.code === "23505")
+    return "This Team ID is already registered. Please refresh and try again.";
   if (/duplicate key|teams_event_id_team_id_key/i.test(message))
     return "This Team ID is already registered.";
   if (/jwt|session|refresh token/i.test(message))

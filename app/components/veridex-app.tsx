@@ -989,12 +989,25 @@ export function VeridexApp() {
       const folder = complete
         ? zip.folder("ZYNERA_2K26_VERIDEX")?.folder("Presentations")
         : zip;
-      for (const team of teams.filter((t) => t.presentations[0])) {
+      const receivedTeams = teams.filter((t) => t.presentations[0]);
+      if (!receivedTeams.length) {
+        toast.info("There are no uploaded PPT files to include yet.", { id });
+        return;
+      }
+      for (const team of receivedTeams) {
         const ppt = team.presentations[0];
-        const { data, error } = await supabase.storage
+        let { data, error } = await supabase.storage
           .from(presentationBucket)
           .download(ppt.storage_path);
-        if (error) throw error;
+        if (error || !data) {
+          const publicUrl = supabase.storage
+            .from(presentationBucket)
+            .getPublicUrl(ppt.storage_path).data.publicUrl;
+          const response = await fetch(publicUrl);
+          if (!response.ok)
+            throw error || new Error("Could not download " + ppt.stored_filename);
+          data = await response.blob();
+        }
         folder?.file(ppt.stored_filename, data);
       }
       if (complete) {
