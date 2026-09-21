@@ -25,6 +25,7 @@ export interface Presentation {
   file_size: number;
   uploaded_by: string | null;
   uploader_name?: string | null;
+  uploader?: { full_name: string | null; email: string } | null;
   uploaded_at: string;
 }
 

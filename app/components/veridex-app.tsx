@@ -208,17 +208,17 @@ export function VeridexApp() {
         ] = await Promise.all([
           supabase
             .from("teams")
-            .select("*,participants(*),presentations(*)")
+            .select("*,participants(*),presentations(*,uploader:veridex_profiles(full_name,email))")
             .eq("event_id", currentEvent.id)
             .order("presentation_order"),
           supabase
             .from("activity_logs")
-            .select("*,team:teams(team_id),profile:profiles(full_name,email)")
+            .select("*,team:teams(team_id),profile:veridex_profiles(full_name,email)")
             .eq("event_id", currentEvent.id)
             .order("created_at", { ascending: false })
             .limit(100),
           supabase
-            .from("profiles")
+            .from("veridex_profiles")
             .select("full_name,email")
             .eq("id", session.user.id)
             .maybeSingle(),
@@ -951,7 +951,7 @@ export function VeridexApp() {
           links[t.id] || "",
           t.presentation_status,
           t.presentation_order,
-          ppt?.uploader_name || profileName,
+          ppt?.uploader?.full_name || ppt?.uploader?.email || ppt?.uploader_name || profileName,
           uploaded ? uploaded.toLocaleDateString("en-IN") : "",
           uploaded ? uploaded.toLocaleTimeString("en-IN") : "",
           profileName,
@@ -2257,7 +2257,7 @@ export function VeridexApp() {
               <b>{ppt.stored_filename}</b>
               <small>
                 {formatBytes(ppt.file_size)} ·{" "}
-                {ppt.uploader_name || "Coordinator"} · {when(ppt.uploaded_at)}
+                {ppt.uploader?.full_name || ppt.uploader?.email || ppt.uploader_name || "Coordinator"} · {when(ppt.uploaded_at)}
               </small>
             </span>
           </div>
@@ -2615,7 +2615,7 @@ export function VeridexApp() {
                   <strong>{ppt.stored_filename}</strong>
                   <small>
                     {formatBytes(ppt.file_size)} · uploaded by{" "}
-                    {ppt.uploader_name || "Coordinator"}
+                    {ppt.uploader?.full_name || ppt.uploader?.email || ppt.uploader_name || "Coordinator"}
                     <br />
                     {when(ppt.uploaded_at)}
                   </small>

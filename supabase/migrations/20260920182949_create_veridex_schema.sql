@@ -10,7 +10,7 @@ create table public.events (
   created_at timestamptz not null default now()
 );
 
-create table public.profiles (
+create table public.veridex_profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null,
   full_name text,
@@ -20,7 +20,7 @@ create table public.profiles (
 
 create table public.coordinators (
   event_id uuid not null references public.events(id) on delete cascade,
-  user_id uuid not null references public.profiles(id) on delete cascade,
+  user_id uuid not null references public.veridex_profiles(id) on delete cascade,
   active boolean not null default true,
   created_at timestamptz not null default now(),
   primary key (event_id, user_id)
@@ -35,9 +35,9 @@ create table public.teams (
   ppt_status text not null default 'Pending' check (ppt_status in ('Pending','Received')),
   presentation_status text not null default 'Waiting' check (presentation_status in ('Waiting','Presenting','Presented','Delayed','Absent')),
   presentation_order integer not null check (presentation_order > 0),
-  created_by uuid references public.profiles(id),
+  created_by uuid references public.veridex_profiles(id),
   created_at timestamptz not null default now(),
-  updated_by uuid references public.profiles(id),
+  updated_by uuid references public.veridex_profiles(id),
   updated_at timestamptz not null default now(),
   unique (event_id, team_id)
 );
@@ -59,7 +59,7 @@ create table public.presentations (
   stored_filename text not null,
   storage_path text not null unique,
   file_size bigint not null check (file_size > 0),
-  uploaded_by uuid references public.profiles(id),
+  uploaded_by uuid references public.veridex_profiles(id),
   uploaded_at timestamptz not null default now()
 );
 
@@ -67,7 +67,7 @@ create table public.activity_logs (
   id uuid primary key default gen_random_uuid(),
   event_id uuid not null references public.events(id) on delete cascade,
   team_id uuid references public.teams(id) on delete set null,
-  coordinator_id uuid references public.profiles(id) on delete set null,
+  coordinator_id uuid references public.veridex_profiles(id) on delete set null,
   action_type text not null,
   description text not null,
   created_at timestamptz not null default now()
@@ -81,7 +81,7 @@ create index activity_event_created_idx on public.activity_logs(event_id, create
 
 create function public.handle_new_user() returns trigger language plpgsql security definer set search_path = '' as $$
 begin
-  insert into public.profiles(id,email,full_name)
+  insert into public.veridex_profiles(id,email,full_name)
   values(new.id,coalesce(new.email,''),coalesce(new.raw_user_meta_data->>'full_name',split_part(coalesce(new.email,''),'@',1)))
   on conflict(id) do update set email=excluded.email, updated_at=now();
   return new;
@@ -95,15 +95,22 @@ revoke all on function public.touch_team() from public, anon, authenticated;
 create trigger teams_touch before update on public.teams for each row execute function public.touch_team();
 
 alter table public.events enable row level security;
-alter table public.profiles enable row level security;
+alter table public.veridex_profiles enable row level security;
 alter table public.coordinators enable row level security;
 alter table public.teams enable row level security;
 alter table public.participants enable row level security;
 alter table public.presentations enable row level security;
 alter table public.activity_logs enable row level security;
 
-create policy profiles_self_select on public.profiles for select to authenticated using ((select auth.uid())=id);
-create policy profiles_self_update on public.profiles for update to authenticated using ((select auth.uid())=id) with check ((select auth.uid())=id);
+create policy veridex_profiles_self_select on public.veridex_profiles for select to authenticated using ((select auth.uid())=id);
+create policy veridex_profiles_event_coordinator_select on public.veridex_profiles for select to authenticated using (
+  (select auth.uid())=id or exists(
+    select 1 from public.coordinators mine
+    join public.coordinators colleague on colleague.event_id=mine.event_id
+    where mine.user_id=(select auth.uid()) and mine.active and colleague.user_id=veridex_profiles.id and colleague.active
+  )
+);
+create policy veridex_profiles_self_update on public.veridex_profiles for update to authenticated using ((select auth.uid())=id) with check ((select auth.uid())=id);
 create policy coordinators_self_select on public.coordinators for select to authenticated using ((select auth.uid())=user_id and active);
 create policy events_coordinator_all on public.events for all to authenticated
   using (exists(select 1 from public.coordinators c where c.event_id=events.id and c.user_id=(select auth.uid()) and c.active))
@@ -122,7 +129,7 @@ create policy activity_coordinator_all on public.activity_logs for all to authen
   with check (exists(select 1 from public.coordinators c where c.event_id=activity_logs.event_id and c.user_id=(select auth.uid()) and c.active));
 
 grant usage on schema public to authenticated;
-grant select,insert,update,delete on public.events,public.profiles,public.coordinators,public.teams,public.participants,public.presentations,public.activity_logs to authenticated;
+grant select,insert,update,delete on public.events,public.veridex_profiles,public.coordinators,public.teams,public.participants,public.presentations,public.activity_logs to authenticated;
 
 insert into public.events(event_name,event_code,event_type,expected_teams)
 values('ZYNERA 2K26 – VERIDEX','VERIDEX','Paper Presentation',50)
