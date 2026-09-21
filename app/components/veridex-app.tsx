@@ -1,6 +1,5 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
 import {
   Activity,
   Archive,
@@ -22,7 +21,6 @@ import {
   LayoutDashboard,
   ListOrdered,
   Loader2,
-  LogOut,
   Menu,
   Pencil,
   Play,
@@ -146,8 +144,7 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 export function VeridexApp() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
+  const [authLoading, setAuthLoading] = useState(false);
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [view, setView] = useState<View>("dashboard");
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -181,13 +178,13 @@ export function VeridexApp() {
   const [expectedInput, setExpectedInput] = useState("50");
   const [resetText, setResetText] = useState("");
   const importRef = useRef<HTMLInputElement>(null);
-  const coordinatorId = session?.user.id || "demo-user";
-  const coordinatorEmail = session?.user.email || "coordinator@veridex.demo";
+  const coordinatorId = null;
+  const coordinatorEmail = "Shared coordinator workspace";
   const demoMode = !isSupabaseConfigured;
 
   const loadData = useCallback(
     async (quiet = false) => {
-      if (!supabase || !session) return;
+      if (!supabase) return;
       if (!quiet) setLoading(true);
       try {
         const { data: eventRows, error: eventError } = await supabase
@@ -204,32 +201,24 @@ export function VeridexApp() {
         const [
           { data: teamRows, error: teamError },
           { data: logRows, error: logError },
-          { data: profile },
         ] = await Promise.all([
           supabase
             .from("teams")
-            .select("*,participants(*),presentations(*,uploader:veridex_profiles(full_name,email))")
+            .select("*,participants(*),presentations(*)")
             .eq("event_id", currentEvent.id)
             .order("presentation_order"),
           supabase
             .from("activity_logs")
-            .select("*,team:teams(team_id),profile:veridex_profiles(full_name,email)")
+            .select("*,team:teams(team_id)")
             .eq("event_id", currentEvent.id)
             .order("created_at", { ascending: false })
             .limit(100),
-          supabase
-            .from("veridex_profiles")
-            .select("full_name,email")
-            .eq("id", session.user.id)
-            .maybeSingle(),
         ]);
         if (teamError) throw teamError;
         if (logError) throw logError;
         setTeams((teamRows || []) as Team[]);
         setActivity((logRows || []) as ActivityLog[]);
-        setProfileName(
-          profile?.full_name || profile?.email?.split("@")[0] || "Coordinator",
-        );
+        setProfileName("Coordinator");
       } catch (error) {
         toast.error(readableError(error));
       } finally {
@@ -237,7 +226,7 @@ export function VeridexApp() {
         setSyncing(false);
       }
     },
-    [session],
+    [],
   );
   useEffect(() => {
     setOnline(navigator.onLine);
@@ -257,22 +246,10 @@ export function VeridexApp() {
     };
   }, [loadData]);
   useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setAuthLoading(false);
-    });
-    const { data } = supabase.auth.onAuthStateChange((_event, next) => {
-      setSession(next);
-      setAuthLoading(false);
-    });
-    return () => data.subscription.unsubscribe();
-  }, []);
+    if (supabase) void loadData();
+  }, [loadData]);
   useEffect(() => {
-    if (session) void loadData();
-  }, [session, loadData]);
-  useEffect(() => {
-    if (!supabase || !session || !event.id) return;
+    if (!supabase || !event.id) return;
     const client = supabase;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const refresh = () => {
@@ -320,7 +297,7 @@ export function VeridexApp() {
       if (timer) clearTimeout(timer);
       void client.removeChannel(channel);
     };
-  }, [session, event.id, coordinatorId, loadData]);
+  }, [event.id, coordinatorId, loadData]);
 
   const logAction = async (
     team: Team | null,
@@ -1281,8 +1258,6 @@ export function VeridexApp() {
         <p>Opening VERIDEX…</p>
       </div>
     );
-  if (isSupabaseConfigured && !session) return <LoginScreen />;
-
   const navItems: {
     id: View;
     label: string;
@@ -1360,11 +1335,6 @@ export function VeridexApp() {
           </nav>
           <div className="sidebar-bottom">
             <span>Created by Akash</span>
-            {session && (
-              <button onClick={() => void supabase?.auth.signOut()}>
-                <LogOut /> Sign out
-              </button>
-            )}
           </div>
         </aside>
         {mobileMenu && (
