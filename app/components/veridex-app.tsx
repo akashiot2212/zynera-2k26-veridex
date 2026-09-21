@@ -144,6 +144,12 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 export function VeridexApp() {
+  const [participantMode] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("participant-upload") ===
+        "1",
+  );
   const [authLoading, setAuthLoading] = useState(false);
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [view, setView] = useState<View>("dashboard");
@@ -442,9 +448,10 @@ export function VeridexApp() {
   };
 
   async function saveTeam() {
+    if (!draft.team_id) updateDraft({ ...draft, team_id: nextTeamCode() });
     if (
       !draft.college_name.trim() ||
-      !draft.team_id.match(/^VER\d{3,}$/) ||
+      !draft.team_id ||
       draft.participants.some(
         (p) => !p.participant_name.trim() || !p.department.trim() || !p.year,
       )
@@ -859,18 +866,9 @@ export function VeridexApp() {
       "S.No",
       "Team ID",
       "Team Name",
-      "Participant 1 Name",
-      "Participant 1 Department",
-      "Participant 1 Year",
-      "Participant 2 Name",
-      "Participant 2 Department",
-      "Participant 2 Year",
-      "Participant 3 Name",
-      "Participant 3 Department",
-      "Participant 3 Year",
-      "Participant 4 Name",
-      "Participant 4 Department",
-      "Participant 4 Year",
+      "Participant Names",
+      "Departments",
+      "Years",
       "College Name",
       "PPT Status",
       "PPT Filename",
@@ -908,20 +906,11 @@ export function VeridexApp() {
         const uploaded = ppt ? new Date(ppt.uploaded_at) : null;
         return [
           i + 1,
-          t.team_id,
+          t.team_id.replace(/^VER/i, ""),
           t.team_name || "",
-          p[0]?.participant_name || "",
-          p[0]?.department || "",
-          p[0]?.year || "",
-          p[1]?.participant_name || "",
-          p[1]?.department || "",
-          p[1]?.year || "",
-          p[2]?.participant_name || "",
-          p[2]?.department || "",
-          p[2]?.year || "",
-          p[3]?.participant_name || "",
-          p[3]?.department || "",
-          p[3]?.year || "",
+          p.map((participant) => participant.participant_name).join(", "),
+          [...new Set(p.map((participant) => participant.department))].join(", "),
+          [...new Set(p.map((participant) => participant.year))].join(", "),
           t.college_name,
           t.ppt_status,
           ppt?.stored_filename || "",
@@ -1258,6 +1247,7 @@ export function VeridexApp() {
         <p>Opening VERIDEX…</p>
       </div>
     );
+  if (participantMode) return <ParticipantUploadPage />;
   const navItems: {
     id: View;
     label: string;
@@ -1366,9 +1356,9 @@ export function VeridexApp() {
           </button>
         ))}
       </nav>
-      <TeamForm />
-      <TeamDetails />
-      <ConfirmDialog />
+      {TeamForm()}
+      {TeamDetails()}
+      {ConfirmDialog()}
     </main>
   );
 
@@ -1513,6 +1503,20 @@ export function VeridexApp() {
             <span>
               <b>Export event data</b>
               <small>Excel, PPTs, complete ZIP</small>
+            </span>
+            <ChevronRight />
+          </button>
+          <button
+            onClick={() => {
+              const link = window.location.origin + "/?participant-upload=1";
+              void navigator.clipboard?.writeText(link);
+              toast.success("Participant upload link copied.");
+            }}
+          >
+            <Upload />
+            <span>
+              <b>Participant upload link</b>
+              <small>Copy one link for every team</small>
             </span>
             <ChevronRight />
           </button>
@@ -2399,19 +2403,9 @@ export function VeridexApp() {
             </DialogDescription>
           </DialogHeader>
           <div className="form-grid">
-            <div>
-              <Label htmlFor="team-id">Team ID</Label>
-              <Input
-                id="team-id"
-                value={draft.team_id}
-                onChange={(e) =>
-                  updateDraft({
-                    ...draft,
-                    team_id: e.target.value.toUpperCase(),
-                  })
-                }
-                placeholder="VER001"
-              />
+            <div className="full generated-id-note">
+              <Label>Team ID</Label>
+              <p>{draft.team_id || "Generated automatically when saved"}</p>
             </div>
             <div>
               <Label htmlFor="team-name">
@@ -2732,6 +2726,124 @@ function LoginScreen() {
             Only authorized VERIDEX coordinators can modify event data.
           </small>
         </form>
+      </section>
+    </main>
+  );
+}
+
+function ParticipantUploadPage() {
+  const [event, setEvent] = useState<EventRecord | null>(null);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      if (!supabase) return;
+      const { data: events } = await supabase
+        .from("events").select("*").eq("event_code", "VERIDEX").limit(1);
+      const current = (events?.[0] as EventRecord | undefined) || null;
+      setEvent(current);
+      if (current) {
+        const { data } = await supabase
+          .from("teams").select("*,participants(*),presentations(*)")
+          .eq("event_id", current.id).order("team_id");
+        setTeams((data || []) as Team[]);
+      }
+      setLoading(false);
+    }
+    void load();
+  }, []);
+
+  async function submit() {
+    const team = teams.find((item) => item.id === selectedTeamId);
+    if (!supabase || !event || !team || !file) return;
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (!ext || !["ppt", "pptx"].includes(ext)) {
+      toast.error("Please choose a .ppt or .pptx file.");
+      return;
+    }
+    setUploading(true);
+    try {
+      const stored = team.team_id + "_" + safeFilename(file.name);
+      const path = event.id + "/" + team.team_id + "/" + stored;
+      const { error: uploadError } = await supabase.storage
+        .from(presentationBucket).upload(path, file, {
+          upsert: true,
+          contentType: file.type || (ext === "ppt"
+            ? "application/vnd.ms-powerpoint"
+            : "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        });
+      if (uploadError) throw uploadError;
+      const { error: recordError } = await supabase.from("presentations").upsert({
+        team_id: team.id, original_filename: file.name, stored_filename: stored,
+        storage_path: path, file_size: file.size, uploaded_by: null,
+        uploaded_at: new Date().toISOString(),
+      }, { onConflict: "team_id" });
+      if (recordError) throw recordError;
+      const { error: teamError } = await supabase.from("teams")
+        .update({ ppt_status: "Received" }).eq("id", team.id);
+      if (teamError) throw teamError;
+      await supabase.from("activity_logs").insert({
+        event_id: event.id, team_id: team.id,
+        action_type: "ppt_uploaded_by_participant",
+        description: team.team_id + " PPT uploaded by participant",
+      });
+      setDone(true);
+      toast.success(team.team_id + " presentation uploaded successfully.");
+    } catch (error) {
+      toast.error(readableError(error));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <main className="login-page participant-upload-page">
+      <section className="login-brand">
+        <div className="login-mark"><Upload /></div>
+        <p className="eyebrow pale">ZYNERA 2K26</p>
+        <h1>VERIDEX</h1>
+        <h2>Participant PPT Upload</h2>
+        <p>Choose your registered team and upload one presentation.</p>
+        <span>Created by Akash</span>
+      </section>
+      <section className="login-panel">
+        {loading ? (
+          <div className="view-loader"><Loader2 className="animate-spin" /><p>Loading teams…</p></div>
+        ) : done ? (
+          <div className="upload-success">
+            <Check /><h2>Upload complete</h2>
+            <p>Your presentation has been received by the VERIDEX coordinators.</p>
+            <Button onClick={() => { setDone(false); setFile(null); }}>Upload another file</Button>
+          </div>
+        ) : (
+          <form onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+            <p className="eyebrow">Shared participant link</p>
+            <h2>Submit your PPT</h2>
+            <p>No account or password is required.</p>
+            <Label htmlFor="participant-team">Select your team</Label>
+            <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
+              <SelectTrigger id="participant-team"><SelectValue placeholder="Choose team ID and names" /></SelectTrigger>
+              <SelectContent>
+                {teams.map((team) => (
+                  <SelectItem value={team.id} key={team.id}>
+                    {team.team_id + " · " + team.participants.map((p) => p.participant_name).join(", ")}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Label htmlFor="participant-ppt">PowerPoint file</Label>
+            <Input id="participant-ppt" type="file" accept=".ppt,.pptx" onChange={(e) => setFile(e.target.files?.[0] || null)} required />
+            <Button type="submit" disabled={uploading || !selectedTeamId || !file}>
+              {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
+              {uploading ? "Uploading…" : "Upload presentation"}
+            </Button>
+          </form>
+        )}
       </section>
     </main>
   );
