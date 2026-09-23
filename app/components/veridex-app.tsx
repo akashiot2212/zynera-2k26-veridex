@@ -175,6 +175,12 @@ export function VeridexApp() {
   const [draft, setDraft] = useState<TeamDraft>(emptyDraft());
   const [savingTeam, setSavingTeam] = useState(false);
   const [uploading, setUploading] = useState<Record<string, number>>({});
+  const [pendingUpload, setPendingUpload] = useState<{
+    team: Team;
+    file: File;
+    teamId: string;
+  } | null>(null);
+  const [savingUploadId, setSavingUploadId] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{
     type: "team" | "ppt";
     team: Team;
@@ -676,6 +682,50 @@ export function VeridexApp() {
           }),
         700,
       );
+    }
+  }
+
+  async function confirmUploadWithTeamId() {
+    if (!pendingUpload) return;
+    const { team, file } = pendingUpload;
+    const teamId = pendingUpload.teamId.trim().toUpperCase();
+    if (!/^VER(?:[0-9]{3,}|OS[0-9]{3,})$/.test(teamId)) {
+      toast.error("Use a valid Team ID, for example VER001 or VEROS001.");
+      return;
+    }
+    if (teams.some((item) => item.id !== team.id && item.team_id === teamId)) {
+      toast.error(`${teamId} is already registered.`);
+      return;
+    }
+    setSavingUploadId(true);
+    try {
+      let uploadTeam = team;
+      if (teamId !== team.team_id) {
+        if (demoMode) {
+          const updatedAt = new Date().toISOString();
+          uploadTeam = { ...team, team_id: teamId, updated_at: updatedAt };
+          setTeams((old) => old.map((item) => item.id === team.id ? uploadTeam : item));
+        } else if (supabase) {
+          const { data, error } = await supabase
+            .from("teams")
+            .update({ team_id: teamId, updated_by: coordinatorId })
+            .eq("id", team.id)
+            .eq("updated_at", team.updated_at)
+            .select("id");
+          if (error) throw error;
+          if (!data?.length)
+            throw new Error(
+              "This team was updated by another coordinator. Reload and review before uploading.",
+            );
+          uploadTeam = { ...team, team_id: teamId };
+        }
+      }
+      setPendingUpload(null);
+      await uploadPpt(uploadTeam, file);
+    } catch (error) {
+      toast.error(readableError(error));
+    } finally {
+      setSavingUploadId(false);
     }
   }
   async function openPpt(team: Team, download = false) {
@@ -1352,6 +1402,7 @@ export function VeridexApp() {
         ))}
       </nav>
       {TeamForm()}
+      {UploadIdDialog()}
       {TeamDetails()}
       {ConfirmDialog()}
     </main>
@@ -2280,7 +2331,8 @@ export function VeridexApp() {
           accept=".ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
           disabled={uploading[team.id] !== undefined}
           onChange={(e) => {
-            void uploadPpt(team, e.target.files?.[0]);
+            const file = e.target.files?.[0];
+            if (file) setPendingUpload({ team, file, teamId: team.team_id });
             e.target.value = "";
           }}
         />
@@ -2367,6 +2419,53 @@ export function VeridexApp() {
     );
   }
 
+  function UploadIdDialog() {
+    const upload = pendingUpload;
+    return (
+      <Dialog
+        open={!!upload}
+        onOpenChange={(open) => !open && !savingUploadId && setPendingUpload(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Team ID before upload</DialogTitle>
+            <DialogDescription>
+              Coordinators can correct the Team ID here. The PPT will be saved using this ID.
+            </DialogDescription>
+          </DialogHeader>
+          <Label htmlFor="upload-team-id">Team ID</Label>
+          <Input
+            id="upload-team-id"
+            value={upload?.teamId || ""}
+            onChange={(event) =>
+              setPendingUpload((current) =>
+                current
+                  ? { ...current, teamId: event.target.value.toUpperCase() }
+                  : current,
+              )
+            }
+            placeholder="VER001"
+            disabled={savingUploadId}
+          />
+          {upload && <p className="muted">Selected file: {upload.file.name}</p>}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPendingUpload(null)}
+              disabled={savingUploadId}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void confirmUploadWithTeamId()} disabled={savingUploadId}>
+              {savingUploadId ? <Loader2 className="animate-spin" /> : <Upload />}
+              {savingUploadId ? "Saving…" : "Save ID & upload"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   function TeamForm() {
     return (
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
@@ -2382,8 +2481,18 @@ export function VeridexApp() {
           </DialogHeader>
           <div className="form-grid">
             <div className="full generated-id-note">
-              <Label>Team ID</Label>
-              <p>{draft.team_id || "Generated automatically when saved"}</p>
+              <Label htmlFor="team-id">Team ID</Label>
+              <Input
+                id="team-id"
+                value={draft.team_id}
+                onChange={(e) =>
+                  updateDraft({
+                    ...draft,
+                    team_id: e.target.value.toUpperCase(),
+                  })
+                }
+                placeholder="VER001"
+              />
             </div>
             <div>
               <Label htmlFor="team-name">
