@@ -1269,6 +1269,46 @@ button svg {
   text-align: center;
   line-height: 1.5;
 }
+.inline-actions {
+  display: flex;
+  gap: 9px;
+}
+.inline-actions input {
+  min-width: 0;
+  flex: 1;
+  text-transform: uppercase;
+}
+.inline-actions button {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+.participant-public-card {
+  padding: 16px;
+  border: 1px solid #cce5df;
+  border-radius: 15px;
+  background: #f1faf7;
+}
+.participant-public-card h3,
+.participant-public-card h4,
+.participant-public-card p {
+  margin: 0 0 7px;
+}
+.participant-public-card p:last-child {
+  margin-bottom: 0;
+}
+.confirmation-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.confirmation-row input {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+}
 .mobile-nav {
   display: none;
 }
