@@ -13,7 +13,7 @@ create table public.events (
 create table public.teams (
   id uuid primary key default gen_random_uuid(),
   event_id uuid not null references public.events(id) on delete cascade,
-  team_id text not null check (team_id ~ '^VER[0-9]{3,}$'),
+  team_id text not null check (team_id ~ '^VER(?:[0-9]{3,}|OS[0-9]{3,})$'),
   team_name text,
   college_name text not null check (length(trim(college_name)) > 0),
   ppt_status text not null default 'Pending' check (ppt_status in ('Pending','Received')),
