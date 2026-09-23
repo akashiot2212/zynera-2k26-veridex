@@ -32,7 +32,7 @@ create table public.participants (
   participant_name text not null check (length(trim(participant_name)) > 0),
   department text,
   year text,
-  participant_number smallint not null check (participant_number between 1 and 4),
+  participant_number smallint not null check (participant_number between 1 and 6),
   unique (team_id, participant_number)
 );
 

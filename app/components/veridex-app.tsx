@@ -2424,7 +2424,7 @@ export function VeridexApp() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[1, 2, 3, 4].map((n) => (
+                  {[1, 2, 3, 4, 5, 6].map((n) => (
                     <SelectItem key={n} value={String(n)}>
                       {n}
                     </SelectItem>
@@ -3031,7 +3031,7 @@ function OnSpotRegistrationPage() {
               setParticipants(Array.from({ length: count }, (_, index) => participants[index] || emptyParticipant(index + 1)));
             }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{[1, 2, 3, 4].map((value) => <SelectItem value={String(value)} key={value}>{value}</SelectItem>)}</SelectContent>
+              <SelectContent>{[1, 2, 3, 4, 5, 6].map((value) => <SelectItem value={String(value)} key={value}>{value}</SelectItem>)}</SelectContent>
             </Select>
             {participants.map((participant, index) => (
               <section className="participant-public-card" key={index}>
