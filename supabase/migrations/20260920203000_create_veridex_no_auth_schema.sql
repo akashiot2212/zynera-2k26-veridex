@@ -30,8 +30,8 @@ create table public.participants (
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references public.teams(id) on delete cascade,
   participant_name text not null check (length(trim(participant_name)) > 0),
-  department text not null check (length(trim(department)) > 0),
-  year text not null check (year in ('1st Year','2nd Year','3rd Year','4th Year')),
+  department text,
+  year text,
   participant_number smallint not null check (participant_number between 1 and 4),
   unique (team_id, participant_number)
 );

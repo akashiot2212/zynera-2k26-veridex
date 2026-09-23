@@ -85,7 +85,6 @@ import type {
   PresentationStatus,
   Team,
   TeamDraft,
-  YearLevel,
 } from "../lib/types";
 
 type View =
@@ -98,7 +97,6 @@ type View =
   | "settings"
   | "about";
 type SortKey = "team_id" | "participant" | "college" | "uploaded" | "order";
-const years: YearLevel[] = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
 const statusOptions: PresentationStatus[] = [
   "Waiting",
   "Presenting",
@@ -108,8 +106,6 @@ const statusOptions: PresentationStatus[] = [
 ];
 const emptyParticipant = (n: number): Participant => ({
   participant_name: "",
-  department: "",
-  year: "1st Year",
   participant_number: n,
 });
 const emptyDraft = (): TeamDraft => ({
@@ -171,9 +167,7 @@ export function VeridexApp() {
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All Teams");
-  const [department, setDepartment] = useState("All departments");
   const [college, setCollege] = useState("All colleges");
-  const [year, setYear] = useState("All years");
   const [sort, setSort] = useState<SortKey>("team_id");
   const [collectionTab, setCollectionTab] = useState("Pending");
   const [formOpen, setFormOpen] = useState(false);
@@ -381,7 +375,7 @@ export function VeridexApp() {
         team.team_id,
         team.team_name,
         team.college_name,
-        ...team.participants.flatMap((p) => [p.participant_name, p.department]),
+        ...team.participants.map((p) => p.participant_name),
         team.presentations[0]?.original_filename,
       ]
         .filter(Boolean)
@@ -395,10 +389,7 @@ export function VeridexApp() {
       return (
         (!q || haystack.includes(q)) &&
         primary &&
-        (department === "All departments" ||
-          team.participants.some((p) => p.department === department)) &&
-        (college === "All colleges" || team.college_name === college) &&
-        (year === "All years" || team.participants.some((p) => p.year === year))
+        (college === "All colleges" || team.college_name === college)
       );
     });
     return list.sort((a, b) => {
@@ -415,14 +406,7 @@ export function VeridexApp() {
         );
       return a.team_id.localeCompare(b.team_id, undefined, { numeric: true });
     });
-  }, [teams, search, filter, department, college, year, sort]);
-  const departments = useMemo(
-    () =>
-      Array.from(
-        new Set(teams.flatMap((t) => t.participants.map((p) => p.department))),
-      ).sort(),
-    [teams],
-  );
+  }, [teams, search, filter, college, sort]);
   const colleges = useMemo(
     () => Array.from(new Set(teams.map((t) => t.college_name))).sort(),
     [teams],
@@ -471,11 +455,11 @@ export function VeridexApp() {
       !draft.college_name.trim() ||
       !draft.team_id ||
       draft.participants.some(
-        (p) => !p.participant_name.trim() || !p.department.trim() || !p.year,
+        (p) => !p.participant_name.trim(),
       )
     ) {
       toast.error(
-        "Add a valid Team ID, college, and complete every participant field.",
+        "Add a valid Team ID, college, and every participant name.",
       );
       return;
     }
@@ -570,8 +554,6 @@ export function VeridexApp() {
             draft.participants.map((p, i) => ({
               team_id: teamId,
               participant_name: p.participant_name.trim(),
-              department: p.department.trim(),
-              year: p.year,
               participant_number: i + 1,
             })),
           );
@@ -887,8 +869,6 @@ export function VeridexApp() {
       "Team ID",
       "Team Name",
       "Participant Names",
-      "Departments",
-      "Years",
       "College Name",
       "PPT Status",
       "PPT Filename",
@@ -914,8 +894,6 @@ export function VeridexApp() {
           t.team_id.replace(/^VER/i, ""),
           t.team_name || "",
           p.map((participant) => participant.participant_name).join(", "),
-          [...new Set(p.map((participant) => participant.department))].join(", "),
-          [...new Set(p.map((participant) => participant.year))].join(", "),
           t.college_name,
           t.ppt_status,
           ppt?.stored_filename || "",
@@ -1101,8 +1079,6 @@ export function VeridexApp() {
         const participants = item.participants.map((p, i) => ({
           team_id: saved.id,
           participant_name: p.participant_name,
-          department: p.department,
-          year: p.year,
           participant_number: i + 1,
         }));
         if (participants.length) {
@@ -1202,7 +1178,7 @@ export function VeridexApp() {
       name: "search_veridex_teams",
       title: "Search VERIDEX teams",
       description:
-        "Search teams by team ID, participant, college, department, or PPT filename.",
+        "Search teams by team ID, participant, college, or PPT filename.",
       inputSchema: {
         type: "object",
         properties: { query: { type: "string" } },
@@ -1692,7 +1668,7 @@ export function VeridexApp() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search Team ID, participant, college, department, PPT…"
+              placeholder="Search Team ID, participant, college, or PPT…"
             />
           </div>
           <div className="filter-row">
@@ -1707,32 +1683,6 @@ export function VeridexApp() {
                   "PPT Pending",
                   ...statusOptions,
                 ].map((v) => (
-                  <SelectItem value={v} key={v}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={department} onValueChange={setDepartment}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All departments">All departments</SelectItem>
-                {departments.map((v) => (
-                  <SelectItem value={v} key={v}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={year} onValueChange={setYear}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All years">All years</SelectItem>
-                {years.map((v) => (
                   <SelectItem value={v} key={v}>
                     {v}
                   </SelectItem>
@@ -2148,11 +2098,6 @@ export function VeridexApp() {
         </td>
         <td>
           {team.participants.map((p) => p.participant_name).join(", ")}
-          <small>
-            {Array.from(
-              new Set(team.participants.map((p) => p.department)),
-            ).join(", ")}
-          </small>
         </td>
         <td>{team.college_name}</td>
         <td>
@@ -2253,7 +2198,7 @@ export function VeridexApp() {
         <div className="participant-chips">
           {team.participants.map((p) => (
             <span key={`${p.participant_number}-${p.participant_name}`}>
-              {p.participant_name} · {p.department} · {p.year}
+              {p.participant_name}
             </span>
           ))}
         </div>
@@ -2507,43 +2452,6 @@ export function VeridexApp() {
                       }}
                     />
                   </div>
-                  <div>
-                    <Label>Department</Label>
-                    <Input
-                      value={p.department}
-                      onChange={(e) => {
-                        const participants = [...draft.participants];
-                        participants[index] = {
-                          ...p,
-                          department: e.target.value,
-                        };
-                        updateDraft({ ...draft, participants });
-                      }}
-                      placeholder="CSE"
-                    />
-                  </div>
-                  <div>
-                    <Label>Year</Label>
-                    <Select
-                      value={p.year}
-                      onValueChange={(v) => {
-                        const participants = [...draft.participants];
-                        participants[index] = { ...p, year: v as YearLevel };
-                        updateDraft({ ...draft, participants });
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {years.map((v) => (
-                          <SelectItem value={v} key={v}>
-                            {v}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
                 </div>
               </section>
             ))}
@@ -2596,9 +2504,6 @@ export function VeridexApp() {
                 <b>{p.participant_number}</b>
                 <span>
                   <strong>{p.participant_name}</strong>
-                  <small>
-                    {p.department} · {p.year}
-                  </small>
                 </span>
               </div>
             ))}
@@ -2928,7 +2833,7 @@ function ParticipantUploadPage() {
                   <p><b>College:</b> {team.college_name}</p>
                   <h4>Participants</h4>
                   {team.participants.slice().sort((a, b) => a.participant_number - b.participant_number).map((participant) => (
-                    <p key={participant.id || participant.participant_number}><b>{participant.participant_name}</b> · {participant.department} · {participant.year}</p>
+                    <p key={participant.id || participant.participant_number}><b>{participant.participant_name}</b></p>
                   ))}
                 </section>
                 <label className="confirmation-row">
@@ -2995,14 +2900,9 @@ function OnSpotRegistrationPage() {
       return;
     }
     if (
-      participants.some(
-        (participant) =>
-          !participant.participant_name.trim() ||
-          !participant.department.trim() ||
-          !participant.year,
-      )
+      participants.some((participant) => !participant.participant_name.trim())
     ) {
-      toast.error("Complete every participant name, department, and year.");
+      toast.error("Complete every participant name.");
       return;
     }
     const ext = file.name.split(".").pop()?.toLowerCase();
@@ -3048,8 +2948,6 @@ function OnSpotRegistrationPage() {
           participants.map((participant, index) => ({
             team_id: team.id,
             participant_name: participant.participant_name.trim(),
-            department: participant.department.trim(),
-            year: participant.year,
             participant_number: index + 1,
           })),
         );
@@ -3140,13 +3038,6 @@ function OnSpotRegistrationPage() {
                 <h4>Participant {index + 1}</h4>
                 <Label>Name</Label>
                 <Input value={participant.participant_name} onChange={(e) => setParticipants((old) => old.map((item, i) => i === index ? { ...item, participant_name: e.target.value } : item))} required />
-                <Label>Department</Label>
-                <Input value={participant.department} onChange={(e) => setParticipants((old) => old.map((item, i) => i === index ? { ...item, department: e.target.value } : item))} required />
-                <Label>Year</Label>
-                <Select value={participant.year} onValueChange={(value) => setParticipants((old) => old.map((item, i) => i === index ? { ...item, year: value as YearLevel } : item))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{years.map((value) => <SelectItem value={value} key={value}>{value}</SelectItem>)}</SelectContent>
-                </Select>
               </section>
             ))}
             <Label htmlFor="onsite-ppt">PowerPoint file</Label>

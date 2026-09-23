@@ -1,4 +1,3 @@
-export type YearLevel = "1st Year" | "2nd Year" | "3rd Year" | "4th Year";
 export type PresentationStatus =
   | "Waiting"
   | "Presenting"
@@ -11,8 +10,6 @@ export interface Participant {
   id?: string;
   team_id?: string;
   participant_name: string;
-  department: string;
-  year: YearLevel;
   participant_number: number;
 }
 

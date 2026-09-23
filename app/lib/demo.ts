@@ -64,8 +64,6 @@ export const demoTeams: Team[] = Array.from({ length: 12 }, (_, index) => {
           "Vijay P",
           "Divya M",
         ][index % 6],
-        department: ["CSE", "ECE", "IT", "EEE"][index % 4],
-        year: `${(index % 4) + 1}${["st", "nd", "rd", "th"][index % 4]} Year` as never,
         participant_number: 1,
       },
     ],
