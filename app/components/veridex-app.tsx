@@ -236,7 +236,7 @@ export function VeridexApp() {
             .limit(100),
           supabase
             .from("event_feedback")
-            .select("*")
+            .select("*,team:teams(team_id,team_name,college_name,participants(participant_name,participant_number))")
             .eq("event_id", currentEvent.id)
             .order("created_at", { ascending: false }),
         ]);
@@ -2068,7 +2068,12 @@ export function VeridexApp() {
               <span><MessageSquare /></span>
               <p>
                 <strong>Venue {item.venue_rating}/5 · Judges {item.judge_rating}/5 · Hospitality {item.hospitality_rating}/5</strong>
-                <small>{item.suggestion || "No additional suggestion."} · {when(item.created_at)}</small>
+                <small>
+                  {item.team
+                    ? `${item.team.team_id} · ${item.team.participants.map((participant) => participant.participant_name).join(", ")} · ${item.team.college_name}`
+                    : "Legacy feedback"}
+                  {" · "}{item.suggestion || "No additional suggestion."} · {when(item.created_at)}
+                </small>
               </p>
             </article>
           )) : <Empty icon={MessageSquare} title="No feedback yet" copy="Share the feedback link after the event." />}
@@ -3243,6 +3248,9 @@ function OnSpotRegistrationPage() {
 
 function FeedbackPage() {
   const [event, setEvent] = useState<EventRecord | null>(null);
+  const [teamId, setTeamId] = useState("");
+  const [team, setTeam] = useState<Team | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
   const [venueRating, setVenueRating] = useState(0);
   const [judgeRating, setJudgeRating] = useState(0);
   const [hospitalityRating, setHospitalityRating] = useState(0);
@@ -3269,8 +3277,50 @@ function FeedbackPage() {
     void load();
   }, []);
 
-  async function submit() {
+  async function findTeam() {
     if (!supabase || !event) return;
+    const enteredId = teamId.trim().toUpperCase();
+    if (!/^VER(?:[0-9]{3,}|OS[0-9]{3,})$/.test(enteredId)) {
+      toast.error("Enter your Team ID, for example VER001.");
+      return;
+    }
+    setLookingUp(true);
+    setTeam(null);
+    try {
+      const { data, error } = await supabase
+        .from("teams")
+        .select("*,participants(*)")
+        .eq("event_id", event.id)
+        .eq("team_id", enteredId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        toast.error(`${enteredId} was not found. Please check your Team ID.`);
+        return;
+      }
+      const verifiedTeam = {
+        ...data,
+        participants: Array.isArray(data.participants)
+          ? data.participants
+          : data.participants
+            ? [data.participants]
+            : [],
+        presentations: [],
+      } as Team;
+      setTeam(verifiedTeam);
+      setTeamId(verifiedTeam.team_id);
+    } catch (error) {
+      toast.error(readableError(error));
+    } finally {
+      setLookingUp(false);
+    }
+  }
+
+  async function submit() {
+    if (!supabase || !event || !team) {
+      toast.error("Verify your Team ID before submitting feedback.");
+      return;
+    }
     if (![venueRating, judgeRating, hospitalityRating].every((value) => value >= 1 && value <= 5)) {
       toast.error("Please rate venue, judges, and hospitality.");
       return;
@@ -3279,6 +3329,7 @@ function FeedbackPage() {
     try {
       const { error } = await supabase.from("event_feedback").insert({
         event_id: event.id,
+        team_id: team.id,
         venue_rating: venueRating,
         judge_rating: judgeRating,
         hospitality_rating: hospitalityRating,
@@ -3322,13 +3373,26 @@ function FeedbackPage() {
           <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
             <p className="eyebrow">Share your experience</p>
             <h2>VERIDEX feedback</h2>
-            <p>Please rate your experience. No account is required.</p>
-            <Rating label="Venue experience" value={venueRating} onChange={setVenueRating} />
-            <Rating label="Judge experience" value={judgeRating} onChange={setJudgeRating} />
-            <Rating label="Hospitality" value={hospitalityRating} onChange={setHospitalityRating} />
-            <Label htmlFor="feedback-suggestion">Your suggestion <span className="muted">(optional)</span></Label>
-            <textarea id="feedback-suggestion" value={suggestion} onChange={(event) => setSuggestion(event.target.value)} placeholder="Tell us what went well or how we can improve." rows={4} maxLength={1000} />
-            <Button type="submit" disabled={submitting}>{submitting ? <Loader2 className="animate-spin" /> : <Check />}{submitting ? "Submitting…" : "Submit feedback"}</Button>
+            <p>Verify your Team ID first, then submit your review.</p>
+            <Label htmlFor="feedback-team-id">Team ID</Label>
+            <div className="inline-actions">
+              <Input id="feedback-team-id" placeholder="VER001" value={teamId} onChange={(event) => setTeamId(event.target.value.toUpperCase())} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void findTeam(); } }} />
+              <Button type="button" onClick={() => void findTeam()} disabled={lookingUp}>{lookingUp ? <Loader2 className="animate-spin" /> : <Search />}{lookingUp ? "Checking…" : "Verify"}</Button>
+            </div>
+            {team && <>
+              <section className="participant-public-card">
+                <p className="eyebrow">Verified team</p>
+                <h3>{team.team_id}{team.team_name ? ` — ${team.team_name}` : ""}</h3>
+                <p><b>College:</b> {team.college_name}</p>
+                <p><b>Participants:</b> {team.participants.slice().sort((a, b) => a.participant_number - b.participant_number).map((participant) => participant.participant_name).join(", ")}</p>
+              </section>
+              <Rating label="Venue experience" value={venueRating} onChange={setVenueRating} />
+              <Rating label="Judge experience" value={judgeRating} onChange={setJudgeRating} />
+              <Rating label="Hospitality" value={hospitalityRating} onChange={setHospitalityRating} />
+              <Label htmlFor="feedback-suggestion">Your suggestion <span className="muted">(optional)</span></Label>
+              <textarea id="feedback-suggestion" value={suggestion} onChange={(event) => setSuggestion(event.target.value)} placeholder="Tell us what went well or how we can improve." rows={4} maxLength={1000} />
+              <Button type="submit" disabled={submitting}>{submitting ? <Loader2 className="animate-spin" /> : <Check />}{submitting ? "Submitting…" : "Submit feedback"}</Button>
+            </>}
           </form>
         )}
       </section>

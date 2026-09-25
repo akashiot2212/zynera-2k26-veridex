@@ -58,11 +58,13 @@ export interface ActivityLog {
 export interface EventFeedback {
   id: string;
   event_id: string;
+  team_id: string | null;
   venue_rating: number;
   judge_rating: number;
   hospitality_rating: number;
   suggestion: string | null;
   created_at: string;
+  team?: Pick<Team, "team_id" | "team_name" | "college_name" | "participants"> | null;
 }
 
 export interface EventRecord {

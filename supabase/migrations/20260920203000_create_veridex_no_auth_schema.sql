@@ -60,6 +60,7 @@ create table public.activity_logs (
 create table public.event_feedback (
   id uuid primary key default gen_random_uuid(),
   event_id uuid not null references public.events(id) on delete cascade,
+  team_id uuid not null references public.teams(id) on delete cascade,
   venue_rating smallint not null check (venue_rating between 1 and 5),
   judge_rating smallint not null check (judge_rating between 1 and 5),
   hospitality_rating smallint not null check (hospitality_rating between 1 and 5),
