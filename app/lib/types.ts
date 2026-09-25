@@ -55,6 +55,16 @@ export interface ActivityLog {
   profile?: { full_name: string | null; email: string } | null;
 }
 
+export interface EventFeedback {
+  id: string;
+  event_id: string;
+  venue_rating: number;
+  judge_rating: number;
+  hospitality_rating: number;
+  suggestion: string | null;
+  created_at: string;
+}
+
 export interface EventRecord {
   id: string;
   event_name: string;

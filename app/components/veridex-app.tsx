@@ -22,6 +22,7 @@ import {
   ListOrdered,
   Loader2,
   Menu,
+  MessageSquare,
   Pencil,
   Play,
   Plus,
@@ -80,6 +81,7 @@ import {
 } from "../lib/supabase";
 import type {
   ActivityLog,
+  EventFeedback,
   EventRecord,
   Participant,
   PresentationStatus,
@@ -93,6 +95,7 @@ type View =
   | "teams"
   | "presentation"
   | "activity"
+  | "feedback"
   | "export"
   | "settings"
   | "about";
@@ -151,6 +154,11 @@ export function VeridexApp() {
       new URLSearchParams(window.location.search).get("onsite-registration") ===
         "1",
   );
+  const [feedbackMode] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("feedback") === "1",
+  );
   const [authLoading, setAuthLoading] = useState(false);
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [view, setView] = useState<View>("dashboard");
@@ -162,6 +170,7 @@ export function VeridexApp() {
   const [activity, setActivity] = useState<ActivityLog[]>(
     isSupabaseConfigured ? [] : demoActivity,
   );
+  const [feedback, setFeedback] = useState<EventFeedback[]>([]);
   const [profileName, setProfileName] = useState("Akash");
   const [online, setOnline] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -212,6 +221,7 @@ export function VeridexApp() {
         const [
           { data: teamRows, error: teamError },
           { data: logRows, error: logError },
+          { data: feedbackRows, error: feedbackError },
         ] = await Promise.all([
           supabase
             .from("teams")
@@ -224,9 +234,15 @@ export function VeridexApp() {
             .eq("event_id", currentEvent.id)
             .order("created_at", { ascending: false })
             .limit(100),
+          supabase
+            .from("event_feedback")
+            .select("*")
+            .eq("event_id", currentEvent.id)
+            .order("created_at", { ascending: false }),
         ]);
         if (teamError) throw teamError;
         if (logError) throw logError;
+        if (feedbackError) throw feedbackError;
         const normalizedTeams = (teamRows || []).map((team) => ({
           ...team,
           participants: Array.isArray(team.participants)
@@ -242,6 +258,7 @@ export function VeridexApp() {
         })) as Team[];
         setTeams(normalizedTeams);
         setActivity((logRows || []) as ActivityLog[]);
+        setFeedback((feedbackRows || []) as EventFeedback[]);
         setProfileName("Coordinator");
       } catch (error) {
         toast.error(readableError(error));
@@ -295,6 +312,19 @@ export function VeridexApp() {
           const next = payload.new as { team_id?: string };
           if (next?.team_id)
             toast.info(`${next.team_id} was updated by another coordinator.`);
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "event_feedback",
+          filter: `event_id=eq.${event.id}`,
+        },
+        () => {
+          toast.info("New VERIDEX feedback received.");
+          refresh();
         },
       )
       .on(
@@ -1293,6 +1323,7 @@ export function VeridexApp() {
     );
   if (onSpotMode) return <OnSpotRegistrationPage />;
   if (participantMode) return <ParticipantUploadPage />;
+  if (feedbackMode) return <FeedbackPage />;
   const navItems: {
     id: View;
     label: string;
@@ -1309,6 +1340,7 @@ export function VeridexApp() {
     { id: "teams", label: "Teams", icon: Users },
     { id: "presentation", label: "Presentation Mode", icon: Presentation },
     { id: "activity", label: "Activity", icon: Activity },
+    { id: "feedback", label: "Feedback", icon: MessageSquare },
     { id: "export", label: "Export", icon: Download },
     { id: "settings", label: "Settings", icon: Settings },
     { id: "about", label: "About", icon: Info },
@@ -1414,6 +1446,7 @@ export function VeridexApp() {
     if (view === "teams") return <TeamsView />;
     if (view === "presentation") return <PresentationMode />;
     if (view === "activity") return <ActivityView />;
+    if (view === "feedback") return <FeedbackView />;
     if (view === "export") return <ExportView />;
     if (view === "settings") return <SettingsView />;
     return <AboutView />;
@@ -1577,6 +1610,20 @@ export function VeridexApp() {
             <span>
               <b>On-spot registration link</b>
               <small>Register walk-in teams as VEROS IDs</small>
+            </span>
+            <ChevronRight />
+          </button>
+          <button
+            onClick={() => {
+              const link = window.location.origin + "/?feedback=1";
+              void navigator.clipboard?.writeText(link);
+              toast.success("Feedback link copied.");
+            }}
+          >
+            <MessageSquare />
+            <span>
+              <b>Feedback link</b>
+              <small>Collect venue, judge, and hospitality feedback</small>
             </span>
             <ChevronRight />
           </button>
@@ -1993,6 +2040,38 @@ export function VeridexApp() {
               copy="Team and presentation updates will appear here."
             />
           )}
+        </section>
+      </>
+    );
+  }
+  function FeedbackView() {
+    const average = (field: "venue_rating" | "judge_rating" | "hospitality_rating") =>
+      feedback.length
+        ? (feedback.reduce((sum, item) => sum + item[field], 0) / feedback.length).toFixed(1)
+        : "—";
+    return (
+      <>
+        <PageHeading
+          eyebrow="Participant feedback"
+          title="Feedback"
+          copy={`${feedback.length} response${feedback.length === 1 ? "" : "s"} received for VERIDEX.`}
+          action={<Button variant="outline" onClick={() => void loadData(true)}><RefreshCw /> Refresh</Button>}
+        />
+        <div className="stat-grid three">
+          <article className="stat-card"><strong>{average("venue_rating")}</strong><p>Venue experience / 5</p></article>
+          <article className="stat-card"><strong>{average("judge_rating")}</strong><p>Judge experience / 5</p></article>
+          <article className="stat-card"><strong>{average("hospitality_rating")}</strong><p>Hospitality / 5</p></article>
+        </div>
+        <section className="panel activity-panel">
+          {feedback.length ? feedback.map((item) => (
+            <article className="activity-item" key={item.id}>
+              <span><MessageSquare /></span>
+              <p>
+                <strong>Venue {item.venue_rating}/5 · Judges {item.judge_rating}/5 · Hospitality {item.hospitality_rating}/5</strong>
+                <small>{item.suggestion || "No additional suggestion."} · {when(item.created_at)}</small>
+              </p>
+            </article>
+          )) : <Empty icon={MessageSquare} title="No feedback yet" copy="Share the feedback link after the event." />}
         </section>
       </>
     );
@@ -3155,6 +3234,101 @@ function OnSpotRegistrationPage() {
               {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
               {uploading ? "Registering & uploading…" : "Register team & upload PPT"}
             </Button>
+          </form>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function FeedbackPage() {
+  const [event, setEvent] = useState<EventRecord | null>(null);
+  const [venueRating, setVenueRating] = useState(0);
+  const [judgeRating, setJudgeRating] = useState(0);
+  const [hospitalityRating, setHospitalityRating] = useState(0);
+  const [suggestion, setSuggestion] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      if (!supabase) {
+        setLoading(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("events")
+        .select("*")
+        .eq("event_code", "VERIDEX")
+        .maybeSingle();
+      if (error) toast.error(readableError(error));
+      setEvent((data as EventRecord | null) || null);
+      setLoading(false);
+    }
+    void load();
+  }, []);
+
+  async function submit() {
+    if (!supabase || !event) return;
+    if (![venueRating, judgeRating, hospitalityRating].every((value) => value >= 1 && value <= 5)) {
+      toast.error("Please rate venue, judges, and hospitality.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.from("event_feedback").insert({
+        event_id: event.id,
+        venue_rating: venueRating,
+        judge_rating: judgeRating,
+        hospitality_rating: hospitalityRating,
+        suggestion: suggestion.trim() || null,
+      });
+      if (error) throw error;
+      setSubmitted(true);
+      toast.success("Thank you for your feedback!");
+    } catch (error) {
+      toast.error(readableError(error));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const Rating = ({ label, value, onChange }: { label: string; value: number; onChange: (next: number) => void }) => (
+    <div>
+      <Label>{label}</Label>
+      <Select value={value ? String(value) : ""} onValueChange={(next) => onChange(Number(next))}>
+        <SelectTrigger><SelectValue placeholder="Select rating" /></SelectTrigger>
+        <SelectContent>{[1, 2, 3, 4, 5].map((rating) => <SelectItem key={rating} value={String(rating)}>{rating} / 5</SelectItem>)}</SelectContent>
+      </Select>
+    </div>
+  );
+
+  return (
+    <main className="login-page participant-upload-page">
+      <Toaster position="top-right" richColors />
+      <section className="login-brand">
+        <div className="login-mark"><MessageSquare /></div>
+        <p className="eyebrow pale">ZYNERA 2K26</p>
+        <h1>VERIDEX</h1>
+        <h2>Event Feedback</h2>
+        <p>Your feedback helps us make future symposium events even better.</p>
+        <span>Created by Akash</span>
+      </section>
+      <section className="login-panel">
+        {loading ? <div className="view-loader"><Loader2 className="animate-spin" /><p>Opening feedback form…</p></div> : submitted ? (
+          <div className="upload-success"><Check /><h2>Thank you!</h2><p>Your VERIDEX feedback has been submitted.</p></div>
+        ) : (
+          <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+            <p className="eyebrow">Share your experience</p>
+            <h2>VERIDEX feedback</h2>
+            <p>Please rate your experience. No account is required.</p>
+            <Rating label="Venue experience" value={venueRating} onChange={setVenueRating} />
+            <Rating label="Judge experience" value={judgeRating} onChange={setJudgeRating} />
+            <Rating label="Hospitality" value={hospitalityRating} onChange={setHospitalityRating} />
+            <Label htmlFor="feedback-suggestion">Your suggestion <span className="muted">(optional)</span></Label>
+            <textarea id="feedback-suggestion" value={suggestion} onChange={(event) => setSuggestion(event.target.value)} placeholder="Tell us what went well or how we can improve." rows={4} maxLength={1000} />
+            <Button type="submit" disabled={submitting}>{submitting ? <Loader2 className="animate-spin" /> : <Check />}{submitting ? "Submitting…" : "Submit feedback"}</Button>
           </form>
         )}
       </section>

@@ -73,11 +73,22 @@ create table public.activity_logs (
   created_at timestamptz not null default now()
 );
 
+create table public.event_feedback (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references public.events(id) on delete cascade,
+  venue_rating smallint not null check (venue_rating between 1 and 5),
+  judge_rating smallint not null check (judge_rating between 1 and 5),
+  hospitality_rating smallint not null check (hospitality_rating between 1 and 5),
+  suggestion text check (suggestion is null or char_length(suggestion) <= 1000),
+  created_at timestamptz not null default now()
+);
+
 create index teams_event_order_idx on public.teams(event_id, presentation_order);
 create index teams_event_ppt_idx on public.teams(event_id, ppt_status);
 create index teams_event_status_idx on public.teams(event_id, presentation_status);
 create index participants_team_idx on public.participants(team_id);
 create index activity_event_created_idx on public.activity_logs(event_id, created_at desc);
+create index event_feedback_event_created_idx on public.event_feedback(event_id, created_at desc);
 
 create function public.handle_new_user() returns trigger language plpgsql security definer set search_path = '' as $$
 begin
@@ -101,6 +112,7 @@ alter table public.teams enable row level security;
 alter table public.participants enable row level security;
 alter table public.presentations enable row level security;
 alter table public.activity_logs enable row level security;
+alter table public.event_feedback enable row level security;
 
 create policy veridex_profiles_self_select on public.veridex_profiles for select to authenticated using ((select auth.uid())=id);
 create policy veridex_profiles_event_coordinator_select on public.veridex_profiles for select to authenticated using (
@@ -127,9 +139,12 @@ create policy presentations_coordinator_all on public.presentations for all to a
 create policy activity_coordinator_all on public.activity_logs for all to authenticated
   using (exists(select 1 from public.coordinators c where c.event_id=activity_logs.event_id and c.user_id=(select auth.uid()) and c.active))
   with check (exists(select 1 from public.coordinators c where c.event_id=activity_logs.event_id and c.user_id=(select auth.uid()) and c.active));
+create policy feedback_public_insert on public.event_feedback for insert to anon, authenticated with check (true);
+create policy feedback_coordinator_select on public.event_feedback for select to authenticated using (exists(select 1 from public.coordinators c where c.event_id=event_feedback.event_id and c.user_id=(select auth.uid()) and c.active));
 
 grant usage on schema public to authenticated;
-grant select,insert,update,delete on public.events,public.veridex_profiles,public.coordinators,public.teams,public.participants,public.presentations,public.activity_logs to authenticated;
+grant select,insert,update,delete on public.events,public.veridex_profiles,public.coordinators,public.teams,public.participants,public.presentations,public.activity_logs,public.event_feedback to authenticated;
+grant insert on public.event_feedback to anon;
 
 insert into public.events(event_name,event_code,event_type,expected_teams)
 values('ZYNERA 2K26 – VERIDEX','VERIDEX','Paper Presentation',50)
@@ -159,6 +174,7 @@ do $$ begin
   if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='participants') then alter publication supabase_realtime add table public.participants; end if;
   if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='presentations') then alter publication supabase_realtime add table public.presentations; end if;
   if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='activity_logs') then alter publication supabase_realtime add table public.activity_logs; end if;
+  if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='event_feedback') then alter publication supabase_realtime add table public.event_feedback; end if;
 end $$;
 
 -- After the first coordinator creates an Auth account, run once in the SQL editor:

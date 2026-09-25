@@ -57,11 +57,22 @@ create table public.activity_logs (
   created_at timestamptz not null default now()
 );
 
+create table public.event_feedback (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references public.events(id) on delete cascade,
+  venue_rating smallint not null check (venue_rating between 1 and 5),
+  judge_rating smallint not null check (judge_rating between 1 and 5),
+  hospitality_rating smallint not null check (hospitality_rating between 1 and 5),
+  suggestion text check (suggestion is null or char_length(suggestion) <= 1000),
+  created_at timestamptz not null default now()
+);
+
 create index teams_event_order_idx on public.teams(event_id, presentation_order);
 create index teams_event_ppt_idx on public.teams(event_id, ppt_status);
 create index teams_event_status_idx on public.teams(event_id, presentation_status);
 create index participants_team_idx on public.participants(team_id);
 create index activity_event_created_idx on public.activity_logs(event_id, created_at desc);
+create index event_feedback_event_created_idx on public.event_feedback(event_id, created_at desc);
 
 create function public.touch_veridex_team() returns trigger language plpgsql set search_path = '' as $$
 begin
@@ -76,15 +87,17 @@ alter table public.teams enable row level security;
 alter table public.participants enable row level security;
 alter table public.presentations enable row level security;
 alter table public.activity_logs enable row level security;
+alter table public.event_feedback enable row level security;
 
 create policy events_shared_access on public.events for all to anon, authenticated using (true) with check (true);
 create policy teams_shared_access on public.teams for all to anon, authenticated using (true) with check (true);
 create policy participants_shared_access on public.participants for all to anon, authenticated using (true) with check (true);
 create policy presentations_shared_access on public.presentations for all to anon, authenticated using (true) with check (true);
 create policy activity_shared_access on public.activity_logs for all to anon, authenticated using (true) with check (true);
+create policy feedback_shared_access on public.event_feedback for all to anon, authenticated using (true) with check (true);
 
 grant usage on schema public to anon, authenticated;
-grant select, insert, update, delete on public.events, public.teams, public.participants, public.presentations, public.activity_logs to anon, authenticated;
+grant select, insert, update, delete on public.events, public.teams, public.participants, public.presentations, public.activity_logs, public.event_feedback to anon, authenticated;
 
 insert into public.events(event_name, event_code, event_type, expected_teams)
 values('ZYNERA 2K26 – VERIDEX', 'VERIDEX', 'Paper Presentation', 50);
@@ -101,3 +114,4 @@ alter publication supabase_realtime add table public.teams;
 alter publication supabase_realtime add table public.participants;
 alter publication supabase_realtime add table public.presentations;
 alter publication supabase_realtime add table public.activity_logs;
+alter publication supabase_realtime add table public.event_feedback;

@@ -1260,6 +1260,15 @@ button svg {
 .login-panel input {
   height: 44px;
 }
+.login-panel textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 11px 12px;
+  border: 1px solid #dce4e7;
+  border-radius: 10px;
+  font: inherit;
+  line-height: 1.45;
+}
 .login-panel button {
   height: 45px;
   margin-top: 7px;
